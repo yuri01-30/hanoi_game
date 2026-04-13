@@ -1,0 +1,152 @@
+
+<style>
+  h2.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+  #app { padding: 1rem 0; font-family: var(--font-sans); }
+  #setup { text-align: center; padding: 2rem 0; }
+  #setup p { color: var(--color-text-secondary); font-size: 14px; margin-bottom: 1.5rem; }
+  .btn-group { display: flex; justify-content: center; gap: 12px; }
+  button { cursor: pointer; border: 0.5px solid var(--color-border-secondary); background: var(--color-background-primary); color: var(--color-text-primary); border-radius: var(--border-radius-md); padding: 8px 20px; font-size: 15px; font-weight: 500; }
+  button:hover { background: var(--color-background-secondary); }
+  button.active { background: #EEEDFE; border-color: #7F77DD; color: #3C3489; }
+  #stats { display: flex; gap: 12px; margin-bottom: 1.5rem; }
+  .stat { flex: 1; background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 0.75rem 1rem; }
+  .stat-label { font-size: 12px; color: var(--color-text-secondary); }
+  .stat-val { font-size: 22px; font-weight: 500; }
+  #towers-wrap { display: flex; gap: 8px; justify-content: center; align-items: flex-end; margin: 1.5rem 0; }
+  .tower-col { display: flex; flex-direction: column; align-items: center; width: 120px; cursor: pointer; }
+  .tower-label { font-size: 13px; color: var(--color-text-secondary); margin-bottom: 6px; }
+  .tower-body { position: relative; display: flex; flex-direction: column-reverse; align-items: center; height: 180px; justify-content: flex-start; width: 100%; }
+  .pole { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); width: 6px; height: 180px; background: var(--color-border-secondary); border-radius: 3px; }
+  .base { width: 100%; height: 8px; background: var(--color-border-secondary); border-radius: 4px; margin-top: 2px; }
+  .disk { height: 24px; border-radius: 4px; margin: 2px 0; position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 500; transition: opacity 0.15s; }
+  .tower-col.selected { outline: 2px solid #7F77DD; outline-offset: 4px; border-radius: var(--border-radius-md); }
+  #msg { text-align: center; font-size: 14px; color: var(--color-text-secondary); min-height: 20px; margin-bottom: 1rem; }
+  #msg.error { color: #993C1D; }
+  #msg.success { color: #0F6E56; font-weight: 500; }
+  #controls { display: flex; justify-content: center; gap: 12px; }
+  #hint-box { margin-top: 1rem; background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 0.75rem 1rem; font-size: 13px; color: var(--color-text-secondary); display: none; }
+</style>
+
+<h2 class="sr-only">ハノイの塔ゲーム — 塔をクリックして円盤を移動してください</h2>
+<div id="app">
+  <div id="setup">
+    <p>段数を選んでください</p>
+    <div class="btn-group">
+      <button onclick="startGame(3)" id="b3">3段</button>
+      <button onclick="startGame(4)" id="b4">4段</button>
+      <button onclick="startGame(5)" id="b5">5段</button>
+    </div>
+  </div>
+  <div id="game" style="display:none">
+    <div id="stats">
+      <div class="stat"><div class="stat-label">移動回数</div><div class="stat-val" id="count">0</div></div>
+      <div class="stat"><div class="stat-label">最小手数</div><div class="stat-val" id="min-moves">—</div></div>
+    </div>
+    <div id="towers-wrap"></div>
+    <div id="msg"></div>
+    <div id="controls">
+      <button onclick="resetGame()">もう一度</button>
+      <button onclick="showHint()">ヒント</button>
+      <button onclick="document.getElementById('setup').style.display='block'; document.getElementById('game').style.display='none'">段数変更</button>
+    </div>
+    <div id="hint-box" id="hint-box"></div>
+  </div>
+</div>
+
+<script>
+const COLORS = [
+  ['#EEEDFE','#3C3489'],['#E1F5EE','#085041'],['#FAECE7','#712B13'],
+  ['#FBEAF0','#72243E'],['#E6F1FB','#0C447C']
+];
+let towers, blocks, selected, moveCount;
+
+function startGame(n) {
+  blocks = n;
+  towers = [[],[],[]];
+  for (let i = n; i >= 1; i--) towers[0].push(i);
+  selected = null;
+  moveCount = 0;
+  document.getElementById('setup').style.display = 'none';
+  document.getElementById('game').style.display = 'block';
+  document.getElementById('count').textContent = 0;
+  document.getElementById('min-moves').textContent = Math.pow(2, n) - 1;
+  document.getElementById('msg').textContent = '移動元の塔をクリックしてください';
+  document.getElementById('msg').className = '';
+  document.getElementById('hint-box').style.display = 'none';
+  render();
+}
+
+function resetGame() { startGame(blocks); }
+
+function render() {
+  const wrap = document.getElementById('towers-wrap');
+  wrap.innerHTML = '';
+  for (let t = 0; t < 3; t++) {
+    const col = document.createElement('div');
+    col.className = 'tower-col' + (selected === t ? ' selected' : '');
+    col.onclick = () => handleClick(t);
+    col.innerHTML = `<div class="tower-label">塔 ${t+1}</div>`;
+    const body = document.createElement('div');
+    body.className = 'tower-body';
+    const pole = document.createElement('div'); pole.className = 'pole';
+    body.appendChild(pole);
+    const maxW = 100, minW = 28;
+    towers[t].forEach(d => {
+      const disk = document.createElement('div');
+      disk.className = 'disk';
+      const w = minW + (maxW - minW) * (d - 1) / (blocks - 1 || 1);
+      const [bg, fg] = COLORS[d - 1];
+      disk.style.cssText = `width:${w}px; background:${bg}; color:${fg}; border: 1.5px solid ${fg}55;`;
+      disk.textContent = d;
+      body.appendChild(disk);
+    });
+    col.appendChild(body);
+    const base = document.createElement('div'); base.className = 'base';
+    col.appendChild(base);
+    wrap.appendChild(col);
+  }
+  document.getElementById('count').textContent = moveCount;
+}
+
+function handleClick(t) {
+  if (selected === null) {
+    if (towers[t].length === 0) { setMsg('その塔には円盤がありません', 'error'); return; }
+    selected = t;
+    setMsg(`塔${t+1}から移動します。移動先をクリックしてください。`);
+    render();
+  } else {
+    if (selected === t) { selected = null; setMsg('選択を解除しました。'); render(); return; }
+    const from = selected, to = t;
+    selected = null;
+    const top_from = towers[from][towers[from].length - 1];
+    const top_to = towers[to][towers[to].length - 1];
+    if (!top_to || top_from < top_to) {
+      towers[to].push(towers[from].pop());
+      moveCount++;
+      render();
+      if (checkWin()) { setMsg('おめでとう！クリア！', 'success'); }
+      else setMsg('移動元の塔をクリックしてください');
+    } else {
+      setMsg('大きい円盤を小さい円盤の上には置けません', 'error');
+      render();
+    }
+  }
+}
+
+function checkWin() {
+  return (towers[1].length === blocks && towers[1].every((v,i) => v === blocks - i))
+      || (towers[2].length === blocks && towers[2].every((v,i) => v === blocks - i));
+}
+
+function setMsg(text, cls) {
+  const el = document.getElementById('msg');
+  el.textContent = text;
+  el.className = cls || '';
+}
+
+function showHint() {
+  const hb = document.getElementById('hint-box');
+  hb.style.display = 'block';
+  hb.textContent = `ヒント：${blocks}段のハノイの塔の最小手数は ${Math.pow(2,blocks)-1} 手です。再帰的に考えると、「n-1枚を中間の塔へ → 最大の円盤を移動 → n-1枚を目標の塔へ」という手順で解けます。`;
+}
+</script>
